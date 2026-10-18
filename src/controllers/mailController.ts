@@ -147,7 +147,7 @@ export const sendResetPassword = async (req: Request, res: Response) => {
 
     const expiresAt = new Date();
     expiresAt.setMinutes(expiresAt.getMinutes() + 15);
-    console.log("expires_at:", expiresAt);
+    // console.log("expires_at:", expiresAt);
 
     await sql`INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES
     (${userId}, ${tokenHash}, ${expiresAt})`;

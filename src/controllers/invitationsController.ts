@@ -9,7 +9,7 @@ import crypto from "crypto";
 export const sendInvitation = async (req: AuthRequest, res: Response) => {
   try {
     const inviterId = req.userId;
-    const workspaceId = req.params.workspaceId;
+    const projectId = req.params.projectId;
     const email = req.body.email?.toLowerCase().trim();
 
     if (!inviterId) {
@@ -21,13 +21,13 @@ export const sendInvitation = async (req: AuthRequest, res: Response) => {
     }
 
     const currentMember =
-      await sql`SELECT user_id, workspace_id, role from workspace_members
-    WHERE workspace_id = ${workspaceId} AND user_id = ${inviterId}`;
+      await sql`SELECT user_id, project_id, role from project_members
+    WHERE project_id = ${projectId} AND user_id = ${inviterId}`;
 
     if (currentMember.length === 0) {
       throw new ErrorHandler(
         404,
-        "Workspace not found or you don't have access",
+        "project not found or you don't have access",
       );
     }
 
@@ -38,26 +38,26 @@ export const sendInvitation = async (req: AuthRequest, res: Response) => {
       );
     }
 
-    const existInWorkspace =
-      await sql`SELECT u.user_id , u.email, m.workspace_id FROM users 
-    AS u JOIN workspace_members AS m ON u.user_id = m.user_id
-    WHERE u.email = ${email} AND m.workspace_id = ${workspaceId}`;
+    const existInProject =
+      await sql`SELECT u.user_id , u.email, m.project_id FROM users 
+    AS u JOIN project_members AS m ON u.user_id = m.user_id
+    WHERE u.email = ${email} AND m.project_id = ${projectId}`;
 
     const [inviter] =
       await sql`SELECT user_id, name FROM users WHERE user_id = ${inviterId}`;
 
-    const [workspace_name] =
-      await sql`SELECT workspace_id, name FROM workspaces WHERE workspace_id = ${workspaceId}`;
+    const [project_name] =
+      await sql`SELECT project_id, name FROM projects WHERE project_id = ${projectId}`;
 
-    if (existInWorkspace.length > 0) {
+    if (existInProject.length > 0) {
       throw new ErrorHandler(
         409,
-        "This user already a member of this workspace",
+        "This user already a member of this project",
       );
     }
 
-    if (!workspace_name) {
-      throw new ErrorHandler(404, "Workspace not found");
+    if (!project_name) {
+      throw new ErrorHandler(404, "project not found");
     }
 
     if (!inviter) {
@@ -71,11 +71,11 @@ export const sendInvitation = async (req: AuthRequest, res: Response) => {
     expiresAt.setMinutes(expiresAt.getMinutes() + 15);
 
     const [invitation] =
-      await sql`INSERT INTO workspace_invitations (workspace_id, email, role, token, status, invited_by, expires_at)
-    VALUES (${workspaceId}, ${email}, ${"Member"}, ${tokenHash}, ${"Pending"}, ${inviterId}, ${expiresAt})
-    RETURNING  workspace_id, email, role, status, invited_by, expires_at, created_at`;
+      await sql`INSERT INTO project_invitations (project_id, email, role, token, status, invited_by, expires_at)
+    VALUES (${projectId}, ${email}, ${"Member"}, ${tokenHash}, ${"Pending"}, ${inviterId}, ${expiresAt})
+    RETURNING  project_id, email, role, status, invited_by, expires_at, created_at`;
 
-    await sendInvitationEmail(email, token, inviter.name, workspace_name.name);
+    await sendInvitationEmail(email, token, inviter.name, project_name.name);
 
     res.status(200).json({
       message: "Send invitation successfully",
@@ -118,13 +118,13 @@ export const acceptInvitation = async (req: AuthRequest, res: Response) => {
     const [invitation] = await sql`
       SELECT
         invitation_id,
-        workspace_id,
+        project_id,
         email,
         role,
         status,
         expires_at,
         invited_by
-      FROM workspace_invitations
+      FROM project_invitations
       WHERE token = ${tokenHash}
     `;
 
@@ -140,7 +140,7 @@ export const acceptInvitation = async (req: AuthRequest, res: Response) => {
     // Kiểm tra hết hạn
     if (new Date(invitation.expires_at) < new Date()) {
       await sql`
-        UPDATE workspace_invitations
+        UPDATE project_invitations
         SET status = 'Expired'
         WHERE invitation_id = ${invitation.invitation_id}
       `;
@@ -155,32 +155,32 @@ export const acceptInvitation = async (req: AuthRequest, res: Response) => {
 
     // Kiểm tra user đã là member chưa
     const [existingMember] = await sql`
-      SELECT workspace_member_id
-      FROM workspace_members
-      WHERE workspace_id = ${invitation.workspace_id}
+      SELECT project_member_id
+      FROM project_members
+      WHERE project_id = ${invitation.project_id}
         AND user_id = ${userId}
     `;
 
     if (existingMember) {
-      throw new ErrorHandler(409, "You are already a member of this workspace");
+      throw new ErrorHandler(409, "You are already a member of this project");
     }
 
     const [member] = await sql`
-    INSERT INTO workspace_members (
-    workspace_id,
+    INSERT INTO project_members (
+    project_id,
     user_id,
     role,
     invited_by
     )
   VALUES (
-    ${invitation.workspace_id},
+    ${invitation.project_id},
     ${userId},
     'Member',
     ${invitation.invited_by}
   )
   RETURNING
-    workspace_member_id,
-    workspace_id,
+    project_member_id,
+    project_id,
     user_id,
     role,
     joined_at
@@ -188,7 +188,7 @@ export const acceptInvitation = async (req: AuthRequest, res: Response) => {
 
     // Đánh dấu invitation đã được accept
     await sql`
-      UPDATE workspace_invitations
+      UPDATE project_invitations
       SET status = 'Accepted'
       WHERE invitation_id = ${invitation.invitation_id}
     `;

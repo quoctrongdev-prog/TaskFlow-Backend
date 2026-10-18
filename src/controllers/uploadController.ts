@@ -9,6 +9,14 @@ const upload = async (req: AuthRequest, res: Response) => {
     const userId = req.userId;
     const file = req.file;
 
+    console.log("Upload avatar debug:", {
+      userId,
+      hasFile: !!file,
+      fileName: file?.originalname,
+      mimeType: file?.mimetype,
+      size: file?.size,
+    });
+
     // Kiểm tra user đăng nhập
     if (!userId) {
       throw new ErrorHandler(401, "Unauthorized");
@@ -73,6 +81,8 @@ const upload = async (req: AuthRequest, res: Response) => {
       // message: "Avatar uploaded successfully",
     });
   } catch (error: any) {
+    console.error("Upload avatar error:", error);
+
     return res.status(500).json({
       message: error?.message || "Upload failed",
       http_code: error?.http_code,
