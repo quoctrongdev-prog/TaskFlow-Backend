@@ -38,17 +38,17 @@ export const sendVerificationEmail = async (email: string, token: string) => {
 
 export const sendForgotPassword = async (email: string, token: string) => {
   try {
-    const verifyUrl = `${process.env.FRONTEND_URL}/forgot-password?token=${token}`;
+    const verifyUrl = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
     const info = await transporter.sendMail({
       from: process.env.EMAIL_FROM, // sender address
       to: email, // list of recipients
-      subject: "Forgot password", // subject line
-      text: "Forgot password", // plain text body
+      subject: "Reset Password", // subject line
+      text: "Reset your password", // plain text body
       html: `
-       <h1>Here is your link to change password!</h1>
+       <h1>Here is your link to reset password!</h1>
 
       <a href="${verifyUrl}">
-        Change password
+        Reset Password
       </a>
 
       <p>This link will expire in 15 minutes.</p>`, // HTML body
@@ -66,7 +66,7 @@ export const sendInvitationEmail = async (
   email: string,
   token: string,
   inviterName: string,
-  workspaceName: string,
+  projectName: string,
 ) => {
   try {
     const inviteUrl = `${process.env.FRONTEND_URL}/invite-email?token=${token}`;
@@ -76,7 +76,7 @@ export const sendInvitationEmail = async (
       to: email,
       subject: "Invitation to Task Flow",
 
-      text: `${inviterName} invited you to join ${workspaceName}.
+      text: `${inviterName} invited you to join ${projectName}.
       
       Accept invitation: ${inviteUrl}`,
 
@@ -85,7 +85,7 @@ export const sendInvitationEmail = async (
 
         <p>
           <strong>${inviterName}</strong> has invited you to join
-          <strong>${workspaceName} project</strong>.
+          <strong>${projectName} project</strong>.
         </p>
 
         <p>

@@ -57,7 +57,7 @@ const registerController = async (req: Request, res: Response) => {
     // console.log("accessToken", accessToken);
 
     res.status(201).json({
-      message: "Register Successfully!",
+      message: "If this email exists, we have sent a verification link",
       // userData: {
       //   registerdUser: registerdUser,
       // },
@@ -87,7 +87,9 @@ const loginController = async (req: Request, res: Response) => {
         existUser[0].password_hash,
       );
       if (!isValid) {
-        return res.status(401).json("Invalid Password");
+        return res.status(401).json({
+          message: "Invalid Password"
+        });
       }
 
       if (!existUser[0].email_verified) {
@@ -161,6 +163,8 @@ const refreshController = async (req: Request, res: Response) => {
     }
     // console.log("UserId từ refreshController: ", userId[0].user_id);
 
+    //Đúng refresh token của user đó thì mới tạo access token mới
+    //Còn lỗi thì báo lại lỗi thôi
     jwt.verify(
       refreshToken,
       process.env.JWT_REFRESH_SECRET as string,
@@ -195,11 +199,11 @@ const logoutController = async (req: Request, res: Response) => {
 
     const user =
       await sql`SELECT user_id FROM refresh_tokens WHERE token = ${tokenHash}`;
-    console.log("userId: ", user);
+    // console.log("userId: ", user);
     if (user.length > 0) {
       const update =
         await sql`UPDATE refresh_tokens SET is_revoked = true WHERE token = ${tokenHash}`;
-      console.log("update: ", update);
+      // console.log("update: ", update);
     }
 
     res.clearCookie("refreshToken");

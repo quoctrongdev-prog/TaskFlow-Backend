@@ -10,7 +10,7 @@ export const changePassword = async (req: AuthRequest, res: Response) => {
     if (!userId) {
       throw new ErrorHandler(401, "Unauthorized");
     }
-    console.log("userId:", userId);
+    // console.log("userId:", userId);
     const { password, newPassword } = req.body;
     if (!password || !newPassword) {
       throw new ErrorHandler(400, "Please give all details");
@@ -18,6 +18,7 @@ export const changePassword = async (req: AuthRequest, res: Response) => {
 
     const user =
       await sql`SELECT user_id, name, password_hash FROM users WHERE user_id = ${userId}`;
+
     if (user.length > 0) {
       const isValid = await bcrypt.compare(password, user[0].password_hash);
       if (!isValid) {
