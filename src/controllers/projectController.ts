@@ -54,34 +54,56 @@ export const createProject = async (req: AuthRequest, res: Response) => {
 
 export const getProject = async (req: AuthRequest, res: Response) => {
   try {
-    const user = req.userId;
-    if (!user) {
-      throw new ErrorHandler(401, "Athentication required");
+    const userId = req.userId;
+
+    if (!userId) {
+      throw new ErrorHandler(401, "Authentication required");
     }
 
-    const projects = await sql`SELECT
-    p.project_id,
-    p.name,
-    p.description,
-    p.created_by,
-    p.created_at,
-    p.updated_at,
-    u.name AS created_by_name
-    FROM projects AS p
-    INNER JOIN users AS u
-    ON p.created_by = u.user_id
-    WHERE p.created_by = ${user};`;
+    const project = await sql`
+      SELECT
+        p.project_id,
+        p.name,
+        p.description,
+        p.created_by,
+        p.created_at,
+        p.updated_at,
+        u.name AS created_by_name,
+        CASE
+          WHEN p.created_by = ${userId} THEN 'Admin'
+          ELSE pm.role
+        END AS member_role
+      FROM projects AS p
+      INNER JOIN users AS u
+        ON u.user_id = p.created_by
+      LEFT JOIN project_members AS pm
+        ON pm.project_id = p.project_id
+        AND pm.user_id = ${userId}
+      WHERE
+        p.created_by = ${userId}
+        OR pm.user_id = ${userId}
+      ORDER BY p.updated_at DESC;
+    `;
 
     return res.status(200).json({
       message:
-        projects.length === 0
+        project.length === 0
           ? "You haven't joined any projects yet"
           : "Get projects successfully",
-      project: projects,
+      project,
     });
   } catch (error) {
-    console.log(error);
-    throw error;
+    console.error("Get projects error:", error);
+
+    if (error instanceof ErrorHandler) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
   }
 };
 
@@ -116,7 +138,17 @@ export const projectDetail = async (req: AuthRequest, res: Response) => {
       projectDetail: projectDetail[0],
     });
   } catch (error) {
-    throw error;
+    console.error("Get project detail error:", error);
+
+    if (error instanceof ErrorHandler) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
   }
 };
 
@@ -166,8 +198,17 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
       project: updatingProject,
     });
   } catch (error) {
-    console.log(error);
-    throw error;
+    console.error("Update project error:", error);
+
+    if (error instanceof ErrorHandler) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
   }
 };
 
@@ -238,8 +279,17 @@ export const updateRole = async (req: AuthRequest, res: Response) => {
       role: updatingRole,
     });
   } catch (error) {
-    console.log(error);
-    throw error;
+    console.error("Update role error:", error);
+
+    if (error instanceof ErrorHandler) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
   }
 };
 
@@ -276,6 +326,16 @@ export const deleteProject = async (req: AuthRequest, res: Response) => {
       message: "Delete project successfully",
     });
   } catch (error) {
-    throw error;
+    console.error("Delete project error:", error);
+
+    if (error instanceof ErrorHandler) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
   }
 };

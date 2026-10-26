@@ -6,33 +6,75 @@ import sql from "../config/db.js";
 dotenv.config();
 
 //Gửi email thôi
-export const sendVerificationEmail = async (email: string, token: string) => {
+// export const sendVerificationEmail = async (email: string, token: string) => {
+//   try {
+//     const verifyUrl = `${process.env.FRONTEND_URL}/verify-email?token=${token}`;
+//     const info = await transporter.sendMail({
+//       from: process.env.EMAIL_FROM, // sender address
+//       to: email, // list of recipients
+//       subject: "Verify Email", // subject line
+//       text: "Verify your TaskFlow account", // plain text body
+//       html: `
+//        <h1>Welcome to TaskFlow!</h1>
+
+//      <p>
+//         Please verify your email address by clicking the link below:
+//       </p>
+
+//       <a href="${verifyUrl}">
+//         Verify Email
+//       </a>
+
+//       <p>This link will expire in 15 minutes.</p>`, // HTML body
+//     });
+//     console.log("Message sent: %s", info.messageId);
+//     // Preview URL is only available when using an Ethereal test account
+//     console.log("Preview URL: %s", nodemailer.getTestMessageUrl(info));
+//     return info;
+//   } catch (err) {
+//     console.error("Error while sending mail:", err);
+//   }
+// };
+
+export const sendVerificationEmail = async (
+  email: string,
+  token: string,
+  redirectUrl?: string | null,
+) => {
   try {
-    const verifyUrl = `${process.env.FRONTEND_URL}/verify-email?token=${token}`;
+    const verifyUrl = new URL("/verify-email", process.env.FRONTEND_URL);
+
+    verifyUrl.searchParams.set("token", token);
+
+    if (
+      redirectUrl &&
+      redirectUrl.startsWith("/") &&
+      !redirectUrl.startsWith("//") &&
+      !redirectUrl.includes("\\")
+    ) {
+      verifyUrl.searchParams.set("redirect", redirectUrl);
+    }
+
     const info = await transporter.sendMail({
-      from: process.env.EMAIL_FROM, // sender address
-      to: email, // list of recipients
-      subject: "Verify Email", // subject line
-      text: "Verify your TaskFlow account", // plain text body
+      from: process.env.EMAIL_FROM,
+      to: email,
+      subject: "Verify Email",
+      text: `Verify your TaskFlow account: ${verifyUrl.toString()}`,
       html: `
-       <h1>Welcome to TaskFlow!</h1>
-
-     <p>
-        Please verify your email address by clicking the link below:
-      </p>
-
-      <a href="${verifyUrl}">
-        Verify Email
-      </a>
-
-      <p>This link will expire in 15 minutes.</p>`, // HTML body
+        <h1>Welcome to TaskFlow!</h1>
+        <p>Please verify your email address by clicking the link below:</p>
+        <a href="${verifyUrl.toString()}">Verify Email</a>
+        <p>This link will expire in 15 minutes.</p>
+      `,
     });
+
     console.log("Message sent: %s", info.messageId);
-    // Preview URL is only available when using an Ethereal test account
     console.log("Preview URL: %s", nodemailer.getTestMessageUrl(info));
+
     return info;
   } catch (err) {
     console.error("Error while sending mail:", err);
+    throw err;
   }
 };
 
@@ -85,7 +127,7 @@ export const sendInvitationEmail = async (
 
         <p>
           <strong>${inviterName}</strong> has invited you to join
-          <strong>${projectName} project</strong>.
+          <strong>${projectName}</strong> project.
         </p>
 
         <p>
@@ -107,4 +149,3 @@ export const sendInvitationEmail = async (
     throw err;
   }
 };
-

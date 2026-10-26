@@ -1,6 +1,7 @@
 import type { Response } from "express";
 import sql from "../config/db.js";
 import { AuthRequest } from "../middlewares/authMiddleware.js";
+import ErrorHandler from "../config/errorHandler.js";
 
 const PRIORITIES = ["Low", "Medium", "High", "Urgent"] as const;
 const STATUSES = [
@@ -111,8 +112,15 @@ export const createTask = async (req: AuthRequest, res: Response) => {
     });
   } catch (error) {
     console.error("Create task error:", error);
+
+    if (error instanceof ErrorHandler) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
     return res.status(500).json({
-      message: "Internal server error",
+      message: "Internal Server Error",
     });
   }
 };
@@ -150,16 +158,26 @@ export const getTasks = async (req: AuthRequest, res: Response) => {
     //nhưng giữ lại các dòng của tasks dù có khớp hay không.
     const tasks = await sql`
       SELECT
-        t.*,
-        assignee.name AS assignee_name,
-        creator.name AS creator_name
-      FROM tasks t
-      LEFT JOIN users assignee
-        ON assignee.user_id = t.assignee_id
-      JOIN users creator
-        ON creator.user_id = t.created_by
-      WHERE t.project_id = ${projectId}
-      ORDER BY t.created_at DESC
+      t.task_id,
+      t.project_id,
+      t.title,
+      t.description,
+      t.priority,
+      t.status,
+      t.assignee_id,
+      t.created_by,
+      t.due_date::text AS due_date,
+      t.created_at,
+      t.updated_at,
+      assignee.name AS assignee_name,
+      creator.name AS creator_name
+    FROM tasks t
+    LEFT JOIN users assignee
+      ON assignee.user_id = t.assignee_id
+    JOIN users creator
+      ON creator.user_id = t.created_by
+    WHERE t.project_id = ${projectId}
+    ORDER BY t.created_at DESC
     `;
 
     return res.status(200).json({
@@ -167,8 +185,15 @@ export const getTasks = async (req: AuthRequest, res: Response) => {
     });
   } catch (error) {
     console.error("Get tasks error:", error);
+
+    if (error instanceof ErrorHandler) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
     return res.status(500).json({
-      message: "Internal server error",
+      message: "Internal Server Error",
     });
   }
 };
@@ -205,8 +230,15 @@ export const getTaskDetail = async (req: AuthRequest, res: Response) => {
     });
   } catch (error) {
     console.error("Get task detail error:", error);
+
+    if (error instanceof ErrorHandler) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
     return res.status(500).json({
-      message: "Internal server error",
+      message: "Internal Server Error",
     });
   }
 };
@@ -330,8 +362,15 @@ export const updateTask = async (req: AuthRequest, res: Response) => {
     });
   } catch (error) {
     console.error("Update task error:", error);
+
+    if (error instanceof ErrorHandler) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
     return res.status(500).json({
-      message: "Internal server error",
+      message: "Internal Server Error",
     });
   }
 };
@@ -375,8 +414,15 @@ export const updateTaskStatus = async (req: AuthRequest, res: Response) => {
     });
   } catch (error) {
     console.error("Update task status error:", error);
+
+    if (error instanceof ErrorHandler) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
     return res.status(500).json({
-      message: "Internal server error",
+      message: "Internal Server Error",
     });
   }
 };
@@ -409,8 +455,15 @@ export const deleteTask = async (req: AuthRequest, res: Response) => {
     });
   } catch (error) {
     console.error("Delete task error:", error);
+
+    if (error instanceof ErrorHandler) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
     return res.status(500).json({
-      message: "Internal server error",
+      message: "Internal Server Error",
     });
   }
 };

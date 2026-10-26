@@ -15,7 +15,7 @@ dotenv.config();
 
 const registerController = async (req: Request, res: Response) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, redirectUrl  } = req.body;
 
     if (!name || !email || !password) {
       throw new ErrorHandler(400, "Please give all details");
@@ -49,7 +49,7 @@ const registerController = async (req: Request, res: Response) => {
     await sql`INSERT INTO email_verification_tokens (user_id, token, expires_at) VALUES 
     (${registerdUser.user_id},${tokenHash}, ${expiresAt})`;
 
-    await sendVerificationEmail(registerdUser.email, token);
+    await sendVerificationEmail(registerdUser.email, token, redirectUrl);
 
     //Trả về một promise thì luôn luôn await để lấy kết quả
     // const accessToken = await generateAccessToken(registerdUser.user_id);
@@ -64,20 +64,28 @@ const registerController = async (req: Request, res: Response) => {
       // token: token, //Hồi comment lại
     });
   } catch (error) {
-    console.log(error);
-    throw error;
+    console.error("Register error:", error);
+
+    if (error instanceof ErrorHandler) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
   }
 };
 
 const loginController = async (req: Request, res: Response) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    throw new ErrorHandler(400, "Please give all details");
-  }
-
-  const emailLowerCase = req.body.email.toLowerCase().trim();
-
   try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      throw new ErrorHandler(400, "Please give all details");
+    }
+
+    const emailLowerCase = req.body.email.toLowerCase().trim();
     const existUser =
       await sql`SELECT user_id, email, password_hash, email_verified FROM users WHERE email = ${emailLowerCase}`;
 
@@ -88,7 +96,7 @@ const loginController = async (req: Request, res: Response) => {
       );
       if (!isValid) {
         return res.status(401).json({
-          message: "Invalid Password"
+          message: "Invalid Password",
         });
       }
 
@@ -140,8 +148,17 @@ const loginController = async (req: Request, res: Response) => {
       });
     }
   } catch (error) {
-    console.log(error);
-    throw error;
+    console.error("Login error:", error);
+
+    if (error instanceof ErrorHandler) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
   }
 };
 
@@ -181,8 +198,17 @@ const refreshController = async (req: Request, res: Response) => {
       accessToken: token,
     });
   } catch (error) {
-    console.log(error);
-    throw error;
+    console.error("Refresh token error:", error);
+
+    if (error instanceof ErrorHandler) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
   }
 };
 
@@ -209,9 +235,18 @@ const logoutController = async (req: Request, res: Response) => {
     res.clearCookie("refreshToken");
     return res.status(200).json({ message: "Logout successfully" });
   } catch (error) {
-    console.log(error);
+    console.error("Logout error:", error);
+
+    if (error instanceof ErrorHandler) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
     res.clearCookie("refreshToken");
-    throw error;
+
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
   }
 };
 

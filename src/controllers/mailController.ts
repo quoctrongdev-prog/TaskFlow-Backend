@@ -64,7 +64,17 @@ export const verifyEmail = async (req: Request, res: Response) => {
       message: "Email verified successfully",
     });
   } catch (error) {
-    throw error;
+    console.error("Verify email error:", error);
+
+    if (error instanceof ErrorHandler) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
   }
 };
 
@@ -118,8 +128,17 @@ export const resendVerifyEmail = async (req: Request, res: Response) => {
       // token: token, // hồi comment lại
     });
   } catch (error) {
-    console.log(error);
-    throw error;
+    console.error("Resend verify email error:", error);
+
+    if (error instanceof ErrorHandler) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
   }
 };
 
@@ -159,7 +178,17 @@ export const sendResetPassword = async (req: Request, res: Response) => {
       // token: token, //Hồi comment lại
     });
   } catch (error) {
-    throw error;
+    console.error("Send reset password error:", error);
+
+    if (error instanceof ErrorHandler) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
   }
 };
 
@@ -205,8 +234,17 @@ export const resetPassword = async (req: Request, res: Response) => {
       message: "Reset password successfully",
     });
   } catch (error) {
-    console.log(error);
-    throw error;
+    console.error("Reset password error:", error);
+
+    if (error instanceof ErrorHandler) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
   }
 };
 
