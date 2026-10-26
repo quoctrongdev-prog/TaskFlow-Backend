@@ -33,8 +33,17 @@ export const changePassword = async (req: AuthRequest, res: Response) => {
       throw new ErrorHandler(404, "User not found");
     }
   } catch (error) {
-    console.log(error);
-    throw error;
+    console.error("Change password error:", error);
+
+    if (error instanceof ErrorHandler) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
   }
 };
 
@@ -59,7 +68,17 @@ export const getUser = async (req: AuthRequest, res: Response) => {
       user: user,
     });
   } catch (error) {
-    throw error;
+    console.error("Get user error:", error);
+
+    if (error instanceof ErrorHandler) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
   }
 };
 
@@ -96,6 +115,16 @@ export const updateUser = async (req: AuthRequest, res: Response) => {
       user: updatedUser,
     });
   } catch (error) {
-    throw error;
+    console.error("Update user error:", error);
+
+    if (error instanceof ErrorHandler) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
   }
 };

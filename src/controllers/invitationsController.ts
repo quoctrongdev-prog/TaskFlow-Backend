@@ -25,10 +25,7 @@ export const sendInvitation = async (req: AuthRequest, res: Response) => {
     WHERE project_id = ${projectId} AND user_id = ${inviterId}`;
 
     if (currentMember.length === 0) {
-      throw new ErrorHandler(
-        404,
-        "project not found or you don't have access",
-      );
+      throw new ErrorHandler(404, "project not found or you don't have access");
     }
 
     if (currentMember[0].role !== "Admin") {
@@ -50,10 +47,7 @@ export const sendInvitation = async (req: AuthRequest, res: Response) => {
       await sql`SELECT project_id, name FROM projects WHERE project_id = ${projectId}`;
 
     if (existInProject.length > 0) {
-      throw new ErrorHandler(
-        409,
-        "This user already a member of this project",
-      );
+      throw new ErrorHandler(409, "This user already a member of this project");
     }
 
     if (!project_name) {
@@ -82,8 +76,17 @@ export const sendInvitation = async (req: AuthRequest, res: Response) => {
       invitation: invitation,
     });
   } catch (error) {
-    console.log(error)
-    throw error;
+    console.error("Send invitation error:", error);
+
+    if (error instanceof ErrorHandler) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
   }
 };
 
@@ -198,6 +201,16 @@ export const acceptInvitation = async (req: AuthRequest, res: Response) => {
       member,
     });
   } catch (error) {
-    throw error;
+    console.error("Accept invitation error:", error);
+
+    if (error instanceof ErrorHandler) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
   }
 };
