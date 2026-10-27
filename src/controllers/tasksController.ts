@@ -170,6 +170,7 @@ export const getTasks = async (req: AuthRequest, res: Response) => {
       t.created_at,
       t.updated_at,
       assignee.name AS assignee_name,
+      assignee.avatar_url AS assignee_avatar_url,
       creator.name AS creator_name
     FROM tasks t
     LEFT JOIN users assignee

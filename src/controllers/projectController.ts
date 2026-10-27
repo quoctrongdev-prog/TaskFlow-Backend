@@ -12,8 +12,23 @@ export const createProject = async (req: AuthRequest, res: Response) => {
       throw new ErrorHandler(401, "Athentication required");
     }
 
-    const { name, description } = req.body;
+    const { name, description, due_date } = req.body;
     const createdBy = user;
+
+    if (
+      due_date !== undefined &&
+      due_date !== null &&
+      due_date !== "" &&
+      (typeof due_date !== "string" ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(due_date) ||
+        Number.isNaN(Date.parse(`${due_date}T00:00:00Z`)) ||
+        new Date(`${due_date}T00:00:00Z`).toISOString().slice(0, 10) !==
+          due_date)
+    ) {
+      throw new ErrorHandler(400, "Invalid due date");
+    }
+
+    const dueDate = due_date || null;
 
     if (typeof name !== "string" || name.trim() === "") {
       throw new ErrorHandler(400, "Name is required");
@@ -23,15 +38,15 @@ export const createProject = async (req: AuthRequest, res: Response) => {
       await sql`SELECT project_id from projects WHERE name = ${name}`;
 
     if (existProject.length > 0) {
-      throw new ErrorHandler(409, "project with this name already exists");
+      throw new ErrorHandler(409, "Project with this name already exists");
     }
 
     await sql`BEGIN`;
 
     const project =
-      await sql`INSERT INTO projects (name, description, created_by) VALUES
-    (${name}, ${description}, ${createdBy}) RETURNING
-    project_id, name, description, created_by, created_at`;
+      await sql`INSERT INTO projects (name, description, due_date, created_by) VALUES
+    (${name}, ${description}, ${dueDate}, ${createdBy}) RETURNING
+    project_id, name, description, image_url, due_date, created_by, created_at`;
 
     const projectId = project[0].project_id;
     const role = "Admin";
@@ -48,7 +63,17 @@ export const createProject = async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.log(error);
     await sql`ROLLBACK`;
-    throw error;
+
+     if (error instanceof ErrorHandler) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
+  
   }
 };
 
@@ -69,6 +94,7 @@ export const getProject = async (req: AuthRequest, res: Response) => {
         p.created_at,
         p.updated_at,
         u.name AS created_by_name,
+        u.avatar_url AS created_by_avatar_url,
         CASE
           WHEN p.created_by = ${userId} THEN 'Admin'
           ELSE pm.role
@@ -94,6 +120,62 @@ export const getProject = async (req: AuthRequest, res: Response) => {
     });
   } catch (error) {
     console.error("Get projects error:", error);
+
+    if (error instanceof ErrorHandler) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
+  }
+};
+
+export const getProjectMembers = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.userId;
+    const { projectId } = req.params;
+
+    if (!userId) {
+      throw new ErrorHandler(401, "Authentication required");
+    }
+
+    // Chỉ thành viên của project mới được xem danh sách
+    const [membership] = await sql`
+      SELECT 1
+      FROM project_members
+      WHERE project_id = ${projectId}
+        AND user_id = ${userId}
+      LIMIT 1
+    `;
+
+    if (!membership) {
+      throw new ErrorHandler(404, "Project not found or you don't have access");
+    }
+
+    const members = await sql`
+      SELECT
+        u.user_id,
+        u.name,
+        u.email,
+        u.avatar_url,
+        pm.role
+      FROM project_members AS pm
+      INNER JOIN users AS u
+        ON u.user_id = pm.user_id
+      WHERE pm.project_id = ${projectId}
+      ORDER BY u.name ASC
+    `;
+
+    return res.status(200).json({
+      message: "Get project members successfully",
+      count: members.length,
+      members,
+    });
+  } catch (error) {
+    console.error("Get project members error:", error);
 
     if (error instanceof ErrorHandler) {
       return res.status(error.statusCode).json({
@@ -152,19 +234,97 @@ export const projectDetail = async (req: AuthRequest, res: Response) => {
   }
 };
 
+export const getProjectProgress = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.userId;
+    const { projectId } = req.params;
+
+    if (!userId) {
+      throw new ErrorHandler(401, "Authentication required");
+    }
+
+    const result = await sql`
+      SELECT
+        COUNT(t.task_id)::int AS total_tasks,
+
+        COUNT(t.task_id) FILTER (
+          WHERE t.status = 'Done'
+        )::int AS completed_tasks,
+
+        COALESCE(
+          ROUND(
+            COUNT(t.task_id) FILTER (
+              WHERE t.status = 'Done'
+            ) * 100.0
+            / NULLIF(COUNT(t.task_id), 0)
+          ),
+          0
+        )::int AS progress
+
+      FROM projects p
+
+      LEFT JOIN project_members pm
+        ON pm.project_id = p.project_id
+        AND pm.user_id = ${userId}
+
+      LEFT JOIN tasks t
+        ON t.project_id = p.project_id
+
+      WHERE
+        p.project_id = ${projectId}
+        AND (
+          p.created_by = ${userId}
+          OR pm.user_id = ${userId}
+        )
+
+      GROUP BY p.project_id;
+    `;
+
+    if (result.length === 0) {
+      throw new ErrorHandler(404, "Project not found");
+    }
+
+    return res.status(200).json({
+      message: "Get project progress successfully",
+      progress: result[0],
+    });
+  } catch (error) {
+    console.error("Get project progress error:", error);
+
+    if (error instanceof ErrorHandler) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
+  }
+};
+
 export const updateProject = async (req: AuthRequest, res: Response) => {
   try {
     const user = req.userId;
     const projectId = req.params.projectId;
 
-    const { name, description } = req.body;
+    const { name, description, due_date } = req.body;
+    const dueDate = due_date || null;
 
     if (!user) {
       throw new ErrorHandler(401, "Athentication required");
     }
 
-    if (!name || !description) {
-      throw new ErrorHandler(400, "Please fill all details");
+    if (typeof name !== "string" || !name.trim()) {
+      throw new ErrorHandler(400, "Project name is required");
+    }
+
+    if (
+      description !== undefined &&
+      description !== null &&
+      typeof description !== "string"
+    ) {
+      throw new ErrorHandler(400, "Invalid description");
     }
 
     const [getProjectId] = await sql`SELECT project_id FROM projects 
@@ -189,9 +349,9 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
     }
 
     const [updatingProject] = await sql`UPDATE projects 
-    SET name = ${name}, description = ${description}, updated_at = NOW()
+    SET name = ${name}, description = ${description}, due_date = ${dueDate}, updated_at = NOW()
     WHERE project_id = ${getProjectId.project_id}
-    RETURNING name, description, updated_at`;
+    RETURNING project_id, name, description, image_url, due_date, updated_at`;
 
     res.status(200).json({
       message: "Update project successfully",

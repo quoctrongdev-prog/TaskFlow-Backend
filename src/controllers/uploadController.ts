@@ -91,6 +91,125 @@ const upload = async (req: AuthRequest, res: Response) => {
   }
 };
 
+export const uploadProjectImage = async (req: AuthRequest, res: Response) => {
+  let uploadedPublicId: string | undefined;
+
+  try {
+    const userId = req.userId;
+    const projectId = req.params.projectId;
+    const file = req.file;
+
+    if (!userId) {
+      throw new ErrorHandler(401, "Authentication required");
+    }
+
+    if (!file?.buffer || file.size === 0) {
+      throw new ErrorHandler(400, "Project image cannot be empty");
+    }
+
+    if (!file.mimetype.startsWith("image/")) {
+      throw new ErrorHandler(400, "Only image files are allowed");
+    }
+
+    // Chỉ Admin của project mới được thay ảnh.
+    const [project] = await sql`
+      SELECT p.project_id, p.image_public_id
+      FROM projects p
+      JOIN project_members pm
+        ON pm.project_id = p.project_id
+      WHERE p.project_id = ${projectId}
+        AND pm.user_id = ${userId}
+        AND pm.role = 'Admin'
+    `;
+
+    if (!project) {
+      throw new ErrorHandler(
+        404,
+        "Project not found or you don't have permission",
+      );
+    }
+
+    const uploadedImage = await new Promise<{
+      secure_url: string;
+      public_id: string;
+    }>((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        {
+          folder: "projects",
+          resource_type: "image",
+        },
+        (error, result) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+
+          if (!result) {
+            reject(new Error("Cloudinary returned no upload result"));
+            return;
+          }
+
+          resolve({
+            secure_url: result.secure_url,
+            public_id: result.public_id,
+          });
+        },
+      );
+
+      stream.end(file.buffer);
+    });
+
+    uploadedPublicId = uploadedImage.public_id;
+
+    await sql`
+      UPDATE projects
+      SET
+        image_url = ${uploadedImage.secure_url},
+        image_public_id = ${uploadedImage.public_id},
+        updated_at = NOW()
+      WHERE project_id = ${projectId}
+    `;
+
+    // Chỉ xóa ảnh cũ sau khi ảnh mới đã upload và được lưu.
+    if (project.image_public_id) {
+      try {
+        await cloudinary.uploader.destroy(project.image_public_id);
+      } catch (error) {
+        // Không làm thất bại request vì xóa ảnh cũ bị lỗi.
+        console.error("Delete old project image error:", error);
+      }
+    }
+
+    return res.status(200).json({
+      message: "Project image uploaded successfully",
+      image_url: uploadedImage.secure_url,
+      image_public_id: uploadedImage.public_id,
+    });
+  } catch (error) {
+    // Nếu upload thành công nhưng lưu database thất bại,
+    // cố gắng xóa ảnh mới để tránh ảnh rác trên Cloudinary.
+    if (uploadedPublicId) {
+      try {
+        await cloudinary.uploader.destroy(uploadedPublicId);
+      } catch (cleanupError) {
+        console.error("Cleanup uploaded project image error:", cleanupError);
+      }
+    }
+
+    if (error instanceof ErrorHandler) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
+    console.error("Upload project image error:", error);
+
+    return res.status(500).json({
+      message: "Unable to upload project image",
+    });
+  }
+};
+
 const uploadTest = async (req: AuthRequest, res: Response) => {
   const file = req.file;
 
