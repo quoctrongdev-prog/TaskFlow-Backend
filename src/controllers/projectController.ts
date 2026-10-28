@@ -46,7 +46,7 @@ export const createProject = async (req: AuthRequest, res: Response) => {
     const project =
       await sql`INSERT INTO projects (name, description, due_date, created_by) VALUES
     (${name}, ${description}, ${dueDate}, ${createdBy}) RETURNING
-    project_id, name, description, image_url, due_date, created_by, created_at`;
+    project_id, name, description, image_url, TO_CHAR(due_date, 'YYYY-MM-DD') AS due_date, created_by, created_at`;
 
     const projectId = project[0].project_id;
     const role = "Admin";
@@ -64,7 +64,7 @@ export const createProject = async (req: AuthRequest, res: Response) => {
     console.log(error);
     await sql`ROLLBACK`;
 
-     if (error instanceof ErrorHandler) {
+    if (error instanceof ErrorHandler) {
       return res.status(error.statusCode).json({
         message: error.message,
       });
@@ -73,7 +73,6 @@ export const createProject = async (req: AuthRequest, res: Response) => {
     return res.status(500).json({
       message: "Internal Server Error",
     });
-  
   }
 };
 
@@ -93,6 +92,8 @@ export const getProject = async (req: AuthRequest, res: Response) => {
         p.created_by,
         p.created_at,
         p.updated_at,
+        p.image_url,
+        TO_CHAR(p.due_date, 'YYYY-MM-DD') AS due_date,
         u.name AS created_by_name,
         u.avatar_url AS created_by_avatar_url,
         CASE
@@ -309,7 +310,6 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
     const projectId = req.params.projectId;
 
     const { name, description, due_date } = req.body;
-    const dueDate = due_date || null;
 
     if (!user) {
       throw new ErrorHandler(401, "Athentication required");
@@ -326,6 +326,21 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
     ) {
       throw new ErrorHandler(400, "Invalid description");
     }
+
+    if (
+      due_date !== undefined &&
+      due_date !== null &&
+      due_date !== "" &&
+      (typeof due_date !== "string" ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(due_date) ||
+        Number.isNaN(Date.parse(`${due_date}T00:00:00Z`)) ||
+        new Date(`${due_date}T00:00:00Z`).toISOString().slice(0, 10) !==
+          due_date)
+    ) {
+      throw new ErrorHandler(400, "Invalid due date");
+    }
+
+    const dueDate = due_date || null;
 
     const [getProjectId] = await sql`SELECT project_id FROM projects 
     WHERE project_id = ${projectId}`;
@@ -351,7 +366,7 @@ export const updateProject = async (req: AuthRequest, res: Response) => {
     const [updatingProject] = await sql`UPDATE projects 
     SET name = ${name}, description = ${description}, due_date = ${dueDate}, updated_at = NOW()
     WHERE project_id = ${getProjectId.project_id}
-    RETURNING project_id, name, description, image_url, due_date, updated_at`;
+    RETURNING project_id, name, description, image_url, TO_CHAR(due_date, 'YYYY-MM-DD') AS due_date, updated_at`;
 
     res.status(200).json({
       message: "Update project successfully",
