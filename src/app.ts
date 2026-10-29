@@ -6,8 +6,9 @@ import mailRoute from "./routes/mailRoute.js";
 import sql from "./config/db.js";
 import cookieParser from "cookie-parser";
 import uploadRoute from "./routes/uploadRoute.js";
-import cors from "cors";
 import tasksRoutes from "./routes/tasksRoutes.js";
+import commentRoutes from "./routes/commentRoute.js";
+import cors from "cors";
 // GET = lấy/mở/xem
 // POST = thực hiện một action làm thay đổi dữ liệu.
 
@@ -46,5 +47,6 @@ app.use("/api/users", userRoute);
 app.use("/api/mail", mailRoute);
 app.use("/api/avatar", uploadRoute);
 app.use("/api/tasks", tasksRoutes);
+app.use("/api/comments", commentRoutes);
 
 export default app;
