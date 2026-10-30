@@ -2,6 +2,7 @@ import type { Response } from "express";
 import sql from "../config/db.js";
 import { AuthRequest } from "../middlewares/authMiddleware.js";
 import ErrorHandler from "../config/errorHandler.js";
+import { createNotification } from "../services/notificationService.js";
 
 const PRIORITIES = ["Low", "Medium", "High", "Urgent"] as const;
 const STATUSES = [
@@ -52,16 +53,32 @@ export const createTask = async (req: AuthRequest, res: Response) => {
     // Nói chung là chỉ cần tìm xem có tồn tại trong project này không
     // Vì chỉ member trong prj đó mới được tạo task trong project đó
     const membership = await sql`
-      SELECT 1
-      FROM project_members
-      WHERE project_id = ${projectId}
-        AND user_id = ${userId}
-      LIMIT 1
-    `;
+    SELECT role
+    FROM project_members
+    WHERE project_id = ${projectId}
+      AND user_id = ${userId}
+    LIMIT 1
+  `;
 
     if (membership.length === 0) {
       return res.status(403).json({
         message: "You are not a member of this project",
+      });
+    }
+
+    const isAdmin = membership[0].role === "Admin";
+
+    // Chỉ Admin mới được tạo task kèm assignee
+    // Nếu là Admin thì sẽ có thể tạo được task khi có
+    // assignee_id hoặc không (người được giao task)
+    // Member thì chỉ được tạo task khi không có assignee_id (người được giao task)
+    // Nếu có assignee_id thì cả 2 điều kiện sẽ là true (!isAdmin -> true)
+    // và sẽ không tạo task được
+    // Admin: tạo task có thể có hoặc không assignee_id
+    // Member: chỉ tạo được task mà không có assignee_id
+    if (assignee_id && !isAdmin) {
+      return res.status(403).json({
+        message: "Only project admins can assign tasks",
       });
     }
 
@@ -83,32 +100,34 @@ export const createTask = async (req: AuthRequest, res: Response) => {
     }
 
     const tasks = await sql`
-      INSERT INTO tasks (
-        project_id,
-        title,
-        description,
-        priority,
-        status,
-        assignee_id,
-        created_by,
-        due_date
-      )
-      VALUES (
-        ${projectId},
-        ${title.trim()},
-        ${description ?? null},
-        ${priority},
-        ${status},
-        ${assignee_id},
-        ${userId},
-        ${due_date}
-      )
-      RETURNING *
-    `;
+    INSERT INTO tasks (
+      project_id,
+      title,
+      description,
+      priority,
+      status,
+      assignee_id,
+      created_by,
+      due_date
+    )
+    VALUES (
+      ${projectId},
+      ${title.trim()},
+      ${description ?? null},
+      ${priority},
+      ${status},
+      ${assignee_id},
+      ${userId},
+      ${due_date}
+    )
+    RETURNING *
+  `;
+
+    const newTask = tasks[0];
 
     return res.status(201).json({
       message: "Task created successfully",
-      task: tasks[0],
+      task: newTask,
     });
   } catch (error) {
     console.error("Create task error:", error);
@@ -249,8 +268,7 @@ export const updateTask = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.userId;
     const { taskId } = req.params;
-    const { title, description, priority, status, assignee_id, due_date } =
-      req.body;
+    const { title, description, priority, due_date } = req.body;
 
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
@@ -286,30 +304,6 @@ export const updateTask = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    if (status !== undefined && !STATUSES.includes(status)) {
-      return res.status(400).json({
-        message: "Invalid status",
-      });
-    }
-
-    // Nếu có assignee mới, kiểm tra họ thuộc project
-    //existing[0].project_id: lấy ra ID của project mà task này thuộc về.
-    if (assignee_id !== undefined && assignee_id !== null) {
-      const assignee = await sql`
-        SELECT 1
-        FROM project_members
-        WHERE project_id = ${existing[0].project_id}
-          AND user_id = ${assignee_id}
-        LIMIT 1
-      `;
-
-      if (assignee.length === 0) {
-        return res.status(400).json({
-          message: "Assignee must be a project member",
-        });
-      }
-    }
-
     const trimmedTitle = title === undefined ? null : title.trim();
 
     const updated = await sql`
@@ -329,16 +323,6 @@ export const updateTask = async (req: AuthRequest, res: Response) => {
           WHEN ${priority !== undefined}
           THEN ${priority}
           ELSE priority
-        END,
-        status = CASE
-          WHEN ${status !== undefined}
-          THEN ${status}
-          ELSE status
-        END,
-        assignee_id = CASE
-          WHEN ${assignee_id !== undefined}
-          THEN ${assignee_id}
-          ELSE assignee_id
         END,
         due_date = CASE
           WHEN ${due_date !== undefined}
@@ -376,7 +360,8 @@ export const updateTask = async (req: AuthRequest, res: Response) => {
   }
 };
 
-// 5. Đổi trạng thái task — cũng chỉ người tạo
+// 5. Đổi trạng thái task
+// Creator hoặc Assignee được phép cập nhật status.
 export const updateTaskStatus = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.userId;
@@ -384,12 +369,40 @@ export const updateTaskStatus = async (req: AuthRequest, res: Response) => {
     const { status } = req.body;
 
     if (!userId) {
-      return res.status(401).json({ message: "Unauthorized" });
+      return res.status(401).json({
+        message: "Unauthorized",
+      });
     }
 
     if (!STATUSES.includes(status)) {
       return res.status(400).json({
         message: "Invalid status",
+      });
+    }
+
+    // Kiểm tra task có tồn tại không và xác định quyền của user
+    const existing = await sql`
+      SELECT task_id, created_by, assignee_id
+      FROM tasks
+      WHERE task_id = ${taskId}
+      LIMIT 1
+    `;
+
+    if (existing.length === 0) {
+      return res.status(404).json({
+        message: "Task not found",
+      });
+    }
+
+    const task = existing[0];
+
+    // Chỉ Creator hoặc Assignee được đổi trạng thái
+    const isCreator = task.created_by === userId;
+    const isAssignee = task.assignee_id === userId;
+
+    if (!isCreator && !isAssignee) {
+      return res.status(403).json({
+        message: "You are not allowed to update this task status",
       });
     }
 
@@ -399,13 +412,16 @@ export const updateTaskStatus = async (req: AuthRequest, res: Response) => {
         status = ${status},
         updated_at = NOW()
       WHERE task_id = ${taskId}
-        AND created_by = ${userId}
+        AND (
+          created_by = ${userId}
+          OR assignee_id = ${userId}
+        )
       RETURNING *
     `;
 
     if (tasks.length === 0) {
-      return res.status(403).json({
-        message: "Only the task creator can change its status",
+      return res.status(404).json({
+        message: "Task is no longer available",
       });
     }
 
@@ -456,6 +472,152 @@ export const deleteTask = async (req: AuthRequest, res: Response) => {
     });
   } catch (error) {
     console.error("Delete task error:", error);
+
+    if (error instanceof ErrorHandler) {
+      return res.status(error.statusCode).json({
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      message: "Internal Server Error",
+    });
+  }
+};
+
+// 6. Assign / Reassign task — chỉ Project Admin
+export const assignTask = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.userId;
+    const { taskId } = req.params;
+    const { assignee_id } = req.body;
+
+    if (!userId) {
+      return res.status(401).json({
+        message: "Unauthorized",
+      });
+    }
+
+    // Phải gửi assignee_id; null có nghĩa là bỏ assignment
+    if (
+      assignee_id === undefined ||
+      (assignee_id !== null && typeof assignee_id !== "string")
+    ) {
+      return res.status(400).json({
+        message: "Invalid assignee_id",
+      });
+    }
+
+    // Tìm task và lấy project_id
+    const existing = await sql`
+      SELECT task_id, project_id, title, assignee_id
+      FROM tasks
+      WHERE task_id = ${taskId}
+      LIMIT 1
+    `;
+
+    if (existing.length === 0) {
+      return res.status(404).json({
+        message: "Task not found",
+      });
+    }
+
+    const task = existing[0];
+
+    // Kiểm tra người thực hiện có phải Admin của project không
+    const membership = await sql`
+      SELECT role
+      FROM project_members
+      WHERE project_id = ${task.project_id}
+        AND user_id = ${userId}
+      LIMIT 1
+    `;
+
+    if (membership.length === 0 || membership[0].role !== "Admin") {
+      return res.status(403).json({
+        message: "Only project admins can assign tasks",
+      });
+    }
+
+    // Nếu có assignee mới, người đó phải thuộc project
+    if (assignee_id !== null) {
+      const assignee = await sql`
+        SELECT 1
+        FROM project_members
+        WHERE project_id = ${task.project_id}
+          AND user_id = ${assignee_id}
+        LIMIT 1
+      `;
+
+      if (assignee.length === 0) {
+        return res.status(400).json({
+          message: "Assignee must be a project member",
+        });
+      }
+    }
+
+    // Cập nhật assignee
+    const updated = await sql`
+      UPDATE tasks
+      SET
+        assignee_id = ${assignee_id},
+        updated_at = NOW()
+      WHERE task_id = ${taskId}
+      RETURNING *
+    `;
+
+    if (updated.length === 0) {
+      return res.status(404).json({
+        message: "Task not found or no longer available",
+      });
+    }
+
+    const updatedTask = updated[0];
+    const previousAssigneeId = task.assignee_id;
+
+    // Chỉ gửi thông báo khi người được giao thực sự thay đổi
+    if (assignee_id !== previousAssigneeId) {
+      // 1. Thông báo cho người được giao cũ
+      if (previousAssigneeId && previousAssigneeId !== userId) {
+        try {
+          await createNotification({
+            userId: previousAssigneeId,
+            actorUserId: userId,
+            type: "TASK_UNASSIGNED",
+            title: "Task assignment changed",
+            message: `You are no longer assigned to "${updatedTask.title}".`,
+            entityType: "task",
+            entityId: updatedTask.task_id,
+          });
+        } catch (notificationError) {
+          console.error("Old assignee notification error:", notificationError);
+        }
+      }
+
+      // 2. Thông báo cho người được giao mới
+      if (assignee_id && assignee_id !== userId) {
+        try {
+          await createNotification({
+            userId: assignee_id,
+            actorUserId: userId,
+            type: "TASK_ASSIGNED",
+            title: "New task assigned",
+            message: `You have been assigned to "${updatedTask.title}".`,
+            entityType: "task",
+            entityId: updatedTask.task_id,
+          });
+        } catch (notificationError) {
+          console.error("New assignee notification error:", notificationError);
+        }
+      }
+    }
+
+    return res.status(200).json({
+      message: "Task assigned successfully",
+      task: updatedTask,
+    });
+  } catch (error) {
+    console.error("Assign task error:", error);
 
     if (error instanceof ErrorHandler) {
       return res.status(error.statusCode).json({
